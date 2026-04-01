@@ -117,7 +117,7 @@
 </head>
 <body>
   <h1>Puzzle Piece Cutter</h1>
-  <p>Upload a <strong>PNG</strong> that is exactly <strong>1024×1536</strong>. This version uses shared vector centerlines traced from your template.</p>
+  <p>Upload a <strong>PNG</strong> that is exactly <strong>1024×1536</strong>. This version uses a fixed, hard-coded template geometry.</p>
 
   <div class="panel">
     <div class="row">
@@ -149,8 +149,8 @@
     const OUTLINE_COLOR = '#000000';
     const EXPORT_PADDING = OUTLINE_WIDTH;
 
-    // Shared vector centerlines traced from the uploaded template once.
-    // These are the source of truth for all pieces.
+    // Fixed template geometry (hard-coded and static).
+    // The template never changes, so all split lines are explicitly defined here.
     const VPATH = [[512,4],[511,187],[515,198],[524,206],[540,208],[547,207],[579,192],[598,186],[621,185],[637,189],[650,195],[657,200],[672,217],[680,236],[682,246],[682,263],[676,285],[663,305],[652,314],[637,322],[622,326],[604,327],[584,323],[549,309],[531,308],[519,314],[513,323],[511,334],[511,700],[507,710],[501,716],[495,719],[481,720],[474,719],[440,704],[422,699],[391,699],[379,703],[362,713],[346,731],[340,744],[337,755],[336,770],[337,782],[341,796],[350,812],[364,826],[375,833],[388,838],[411,841],[438,836],[478,819],[491,819],[501,823],[507,829],[510,835],[511,1210],[507,1221],[502,1226],[493,1230],[472,1229],[444,1217],[417,1209],[393,1209],[378,1213],[356,1225],[345,1236],[340,1243],[333,1258],[330,1276],[331,1293],[338,1312],[344,1321],[358,1335],[376,1345],[397,1350],[420,1349],[437,1345],[476,1329],[496,1330],[506,1337],[510,1344],[511,1350],[512,1475],[510,1531]];
     const H1 = [[3,512],[131,512],[181,511],[191,509],[199,504],[202,500],[204,489],[203,484],[191,465],[183,447],[182,427],[185,416],[190,406],[205,391],[224,381],[239,377],[269,377],[286,382],[304,392],[318,406],[324,417],[327,428],[327,441],[325,451],[318,466],[310,477],[305,487],[305,496],[313,506],[328,511],[350,512],[689,512],[701,517],[707,523],[709,530],[708,540],[692,566],[685,585],[685,603],[692,621],[705,636],[722,647],[744,654],[769,656],[791,652],[813,642],[830,626],[838,612],[841,599],[841,588],[838,575],[831,560],[821,546],[817,537],[817,528],[820,522],[825,517],[837,512],[1020,511]];
     const H2 = [[3,1024],[175,1024],[188,1022],[196,1018],[200,1014],[202,1002],[199,993],[187,976],[180,958],[180,939],[185,926],[200,909],[217,899],[238,893],[266,893],[285,898],[301,906],[319,923],[325,934],[328,947],[328,956],[325,968],[318,981],[307,996],[305,1005],[307,1013],[313,1019],[319,1022],[330,1024],[685,1024],[693,1026],[699,1029],[704,1034],[706,1046],[702,1056],[689,1074],[683,1089],[682,1105],[683,1112],[688,1124],[703,1141],[721,1152],[737,1157],[763,1160],[783,1157],[803,1150],[818,1140],[828,1129],[833,1120],[837,1105],[837,1094],[834,1082],[814,1047],[814,1040],[816,1035],[824,1028],[837,1024],[1020,1023]];
@@ -243,12 +243,19 @@
       const h2 = offsetPoints(H2, dx, dy);
       const p = new Path2D();
 
+      // NOTE:
+      // We intentionally route each outer-edge connection through explicit border points.
+      // This avoids diagonal shortcuts and keeps piece boundaries consistent with the
+      // fixed template, especially around pieces 3/4 where previous logic drifted.
       switch (pieceIndex) {
         case 1:
           p.moveTo(dx, dy);
           p.lineTo(WIDTH / 2 + dx, dy);
+          p.lineTo(WIDTH / 2 + dx, 4 + dy);
           drawPolyline(p, v.filter(pt => pt[1] <= 512 + dy), false);
+          p.lineTo(3 + dx, 512 + dy);
           drawPolyline(p, reversed(h1.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
+          p.lineTo(dx, 512 + dy);
           p.lineTo(dx, dy);
           p.closePath();
           break;
@@ -256,16 +263,22 @@
         case 2:
           p.moveTo(WIDTH / 2 + dx, dy);
           p.lineTo(WIDTH + dx, dy);
-          p.lineTo(WIDTH + dx, 512 + dy);
+          p.lineTo(WIDTH + dx, 511 + dy);
+          p.lineTo(1020 + dx, 511 + dy);
           drawPolyline(p, reversed(h1.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
+          p.lineTo(WIDTH / 2 + dx, 512 + dy);
           drawPolyline(p, reversed(v.filter(pt => pt[1] <= 512 + dy)), false);
+          p.lineTo(WIDTH / 2 + dx, dy);
           p.closePath();
           break;
 
         case 3:
           p.moveTo(dx, 512 + dy);
+          p.lineTo(3 + dx, 512 + dy);
           drawPolyline(p, h1.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
+          p.lineTo(WIDTH / 2 + dx, 512 + dy);
           drawPolyline(p, v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy), false);
+          p.lineTo(3 + dx, 1024 + dy);
           drawPolyline(p, reversed(h2.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
           p.lineTo(dx, 512 + dy);
           p.closePath();
@@ -273,18 +286,25 @@
 
         case 4:
           p.moveTo(WIDTH / 2 + dx, 512 + dy);
+          p.lineTo(511 + dx, 512 + dy);
           drawPolyline(p, h1.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
-          p.lineTo(WIDTH + dx, 1024 + dy);
+          p.lineTo(1024 + dx, 511 + dy);
+          p.lineTo(1024 + dx, 1023 + dy);
+          p.lineTo(1020 + dx, 1023 + dy);
           drawPolyline(p, reversed(h2.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
+          p.lineTo(WIDTH / 2 + dx, 1024 + dy);
           drawPolyline(p, reversed(v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy)), false);
+          p.lineTo(WIDTH / 2 + dx, 512 + dy);
           p.closePath();
           break;
 
         case 5:
           p.moveTo(dx, 1024 + dy);
+          p.lineTo(3 + dx, 1024 + dy);
           drawPolyline(p, h2.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
+          p.lineTo(WIDTH / 2 + dx, 1024 + dy);
           drawPolyline(p, v.filter(pt => pt[1] >= 1024 + dy), false);
-          p.lineTo(dx + WIDTH / 2, dy + HEIGHT);
+          p.lineTo(510 + dx, HEIGHT + dy);
           p.lineTo(dx, dy + HEIGHT);
           p.lineTo(dx, 1024 + dy);
           p.closePath();
@@ -292,9 +312,11 @@
 
         case 6:
           p.moveTo(WIDTH / 2 + dx, 1024 + dy);
+          p.lineTo(511 + dx, 1024 + dy);
           drawPolyline(p, h2.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
+          p.lineTo(WIDTH + dx, 1023 + dy);
           p.lineTo(WIDTH + dx, HEIGHT + dy);
-          p.lineTo(WIDTH / 2 + dx, HEIGHT + dy);
+          p.lineTo(510 + dx, HEIGHT + dy);
           drawPolyline(p, reversed(v.filter(pt => pt[1] >= 1024 + dy)), false);
           p.closePath();
           break;
@@ -333,42 +355,47 @@
         return;
       }
 
-      thumbs.innerHTML = '';
-      pieceData = [];
+      try {
+        thumbs.innerHTML = '';
+        pieceData = [];
 
-      for (let i = 1; i <= 6; i++) {
-        const pieceCanvas = document.createElement('canvas');
-        pieceCanvas.width = WIDTH + EXPORT_PADDING * 2;
-        pieceCanvas.height = HEIGHT + EXPORT_PADDING * 2;
-        const ctx = pieceCanvas.getContext('2d');
+        for (let i = 1; i <= 6; i++) {
+          const pieceCanvas = document.createElement('canvas');
+          pieceCanvas.width = WIDTH + EXPORT_PADDING * 2;
+          pieceCanvas.height = HEIGHT + EXPORT_PADDING * 2;
+          const ctx = pieceCanvas.getContext('2d');
 
-        const path = buildPiecePath(i, EXPORT_PADDING, EXPORT_PADDING);
+          const path = buildPiecePath(i, EXPORT_PADDING, EXPORT_PADDING);
 
-        ctx.clearRect(0, 0, pieceCanvas.width, pieceCanvas.height);
+          ctx.clearRect(0, 0, pieceCanvas.width, pieceCanvas.height);
 
-        ctx.save();
-        ctx.clip(path);
-        ctx.drawImage(sourceImage, EXPORT_PADDING, EXPORT_PADDING, WIDTH, HEIGHT);
-        ctx.restore();
+          ctx.save();
+          ctx.clip(path);
+          ctx.drawImage(sourceImage, EXPORT_PADDING, EXPORT_PADDING, WIDTH, HEIGHT);
+          ctx.restore();
 
-        ctx.save();
-        ctx.strokeStyle = OUTLINE_COLOR;
-        ctx.lineWidth = OUTLINE_WIDTH;
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.stroke(path);
-        ctx.restore();
+          ctx.save();
+          ctx.strokeStyle = OUTLINE_COLOR;
+          ctx.lineWidth = OUTLINE_WIDTH;
+          ctx.lineJoin = 'round';
+          ctx.lineCap = 'round';
+          ctx.stroke(path);
+          ctx.restore();
 
-        pieceData.push({
-          index: i,
-          canvas: pieceCanvas
-        });
+          pieceData.push({
+            index: i,
+            canvas: pieceCanvas
+          });
+        }
+
+        renderThumbnails();
+        drawMainPreview();
+        downloadAllBtn.disabled = false;
+        setStatus('Done. 6 pieces generated using fixed template geometry.');
+      } catch (err) {
+        console.error(err);
+        setStatus('Generation failed. Please reload and try again. Error: ' + (err && err.message ? err.message : String(err)), true);
       }
-
-      renderThumbnails();
-      drawMainPreview();
-      downloadAllBtn.disabled = false;
-      setStatus('Done. 6 pieces generated using shared vector template paths.');
     }
 
     function renderThumbnails() {
@@ -434,23 +461,30 @@
         setStatus('Generate the pieces first.', true);
         return;
       }
+      try {
+        const zip = new JSZip();
 
-      const zip = new JSZip();
+        for (const piece of pieceData) {
+          const blob = await canvasToBlob(piece.canvas);
+          if (!blob) {
+            throw new Error(`Failed to encode piece_${piece.index}.png`);
+          }
+          zip.file(`piece_${piece.index}.png`, blob);
+        }
 
-      for (const piece of pieceData) {
-        const blob = await canvasToBlob(piece.canvas);
-        zip.file(`piece_${piece.index}.png`, blob);
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'puzzle_pieces.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error(err);
+        setStatus('ZIP download failed. Error: ' + (err && err.message ? err.message : String(err)), true);
       }
-
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'puzzle_pieces.zip';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
     }
   </script>
 </body>
