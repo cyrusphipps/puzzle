@@ -237,87 +237,117 @@
       return [...points].reverse();
     }
 
+    function lineToPoint(pathLike, x, y) {
+      pathLike.lineTo(x, y);
+    }
+
+    function lineAlongBorder(pathLike, points) {
+      for (const [x, y] of points) {
+        lineToPoint(pathLike, x, y);
+      }
+    }
+
     function buildPiecePath(pieceIndex, dx = 0, dy = 0) {
       const v = offsetPoints(VPATH, dx, dy);
       const h1 = offsetPoints(H1, dx, dy);
       const h2 = offsetPoints(H2, dx, dy);
       const p = new Path2D();
+      const left = dx;
+      const right = WIDTH + dx;
+      const top = dy;
+      const bottom = HEIGHT + dy;
+      const midX = WIDTH / 2 + dx;
+      const y1 = 512 + dy;
+      const y2 = 1024 + dy;
 
-      // NOTE:
-      // We intentionally route each outer-edge connection through explicit border points.
-      // This avoids diagonal shortcuts and keeps piece boundaries consistent with the
-      // fixed template, especially around pieces 3/4 where previous logic drifted.
+      const vUpper = v.filter(pt => pt[1] <= y1);
+      const vMiddle = v.filter(pt => pt[1] >= y1 && pt[1] <= y2);
+      const vLower = v.filter(pt => pt[1] >= y2);
+      const h1Left = h1.filter(pt => pt[0] <= midX);
+      const h1Right = h1.filter(pt => pt[0] >= midX);
+      const h2Left = h2.filter(pt => pt[0] <= midX);
+      const h2Right = h2.filter(pt => pt[0] >= midX);
+
       switch (pieceIndex) {
         case 1:
-          p.moveTo(dx, dy);
-          p.lineTo(WIDTH / 2 + dx, dy);
-          p.lineTo(WIDTH / 2 + dx, 4 + dy);
-          drawPolyline(p, v.filter(pt => pt[1] <= 512 + dy), false);
-          p.lineTo(3 + dx, 512 + dy);
-          drawPolyline(p, reversed(h1.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
-          p.lineTo(dx, 512 + dy);
-          p.lineTo(dx, dy);
+          // Clockwise chain:
+          // top-left -> top edge -> VPATH(upper, downward) -> H1(left, right-to-left)
+          // -> left edge up -> start.
+          p.moveTo(left, top);
+          lineAlongBorder(p, [[midX, top], [midX, 4 + dy]]);
+          drawPolyline(p, vUpper, false);
+          lineAlongBorder(p, [[midX, y1], [3 + dx, y1]]);
+          drawPolyline(p, reversed(h1Left), false);
+          lineAlongBorder(p, [[left, y1], [left, top]]);
           p.closePath();
           break;
 
         case 2:
-          p.moveTo(WIDTH / 2 + dx, dy);
-          p.lineTo(WIDTH + dx, dy);
-          p.lineTo(WIDTH + dx, 511 + dy);
-          p.lineTo(1020 + dx, 511 + dy);
-          drawPolyline(p, reversed(h1.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
-          p.lineTo(WIDTH / 2 + dx, 512 + dy);
-          drawPolyline(p, reversed(v.filter(pt => pt[1] <= 512 + dy)), false);
-          p.lineTo(WIDTH / 2 + dx, dy);
+          // Clockwise chain:
+          // top-mid -> top-right edge -> right edge down -> H1(right, right-to-left)
+          // -> VPATH(upper, upward) -> top-mid.
+          p.moveTo(midX, top);
+          lineAlongBorder(p, [[right, top], [right, 511 + dy], [1020 + dx, 511 + dy]]);
+          drawPolyline(p, reversed(h1Right), false);
+          lineAlongBorder(p, [[midX, y1]]);
+          drawPolyline(p, reversed(vUpper), false);
+          lineAlongBorder(p, [[midX, 4 + dy], [midX, top]]);
           p.closePath();
           break;
 
         case 3:
-          p.moveTo(dx, 512 + dy);
-          p.lineTo(3 + dx, 512 + dy);
-          drawPolyline(p, h1.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
-          p.lineTo(WIDTH / 2 + dx, 512 + dy);
-          drawPolyline(p, v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy), false);
-          p.lineTo(3 + dx, 1024 + dy);
-          drawPolyline(p, reversed(h2.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
-          p.lineTo(dx, 512 + dy);
+          // Clockwise chain:
+          // left-mid(512) -> H1(left, left-to-right) -> VPATH(middle, downward)
+          // -> H2(left, right-to-left) -> left edge via (0,1024) then (0,512) -> start.
+          p.moveTo(left, y1);
+          lineAlongBorder(p, [[3 + dx, y1]]);
+          drawPolyline(p, h1Left, false);
+          lineAlongBorder(p, [[midX, y1]]);
+          drawPolyline(p, vMiddle, false);
+          lineAlongBorder(p, [[midX, y2], [3 + dx, y2]]);
+          drawPolyline(p, reversed(h2Left), false);
+          lineAlongBorder(p, [[left, y2], [left, y1]]);
           p.closePath();
           break;
 
         case 4:
-          p.moveTo(WIDTH / 2 + dx, 512 + dy);
-          p.lineTo(511 + dx, 512 + dy);
-          drawPolyline(p, h1.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
-          p.lineTo(1024 + dx, 511 + dy);
-          p.lineTo(1024 + dx, 1023 + dy);
-          p.lineTo(1020 + dx, 1023 + dy);
-          drawPolyline(p, reversed(h2.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
-          p.lineTo(WIDTH / 2 + dx, 1024 + dy);
-          drawPolyline(p, reversed(v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy)), false);
-          p.lineTo(WIDTH / 2 + dx, 512 + dy);
+          // Clockwise chain:
+          // mid(512) -> H1(right, left-to-right) -> right edge down
+          // -> H2(right, right-to-left) -> VPATH(middle, upward) -> start.
+          p.moveTo(midX, y1);
+          lineAlongBorder(p, [[511 + dx, y1]]);
+          drawPolyline(p, h1Right, false);
+          lineAlongBorder(p, [[right, 511 + dy], [right, 1023 + dy], [1020 + dx, 1023 + dy]]);
+          drawPolyline(p, reversed(h2Right), false);
+          lineAlongBorder(p, [[midX, y2]]);
+          drawPolyline(p, reversed(vMiddle), false);
+          lineAlongBorder(p, [[midX, y1]]);
           p.closePath();
           break;
 
         case 5:
-          p.moveTo(dx, 1024 + dy);
-          p.lineTo(3 + dx, 1024 + dy);
-          drawPolyline(p, h2.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
-          p.lineTo(WIDTH / 2 + dx, 1024 + dy);
-          drawPolyline(p, v.filter(pt => pt[1] >= 1024 + dy), false);
-          p.lineTo(510 + dx, HEIGHT + dy);
-          p.lineTo(dx, dy + HEIGHT);
-          p.lineTo(dx, 1024 + dy);
+          // Clockwise chain:
+          // left-mid(1024) -> H2(left, left-to-right) -> VPATH(lower, downward)
+          // -> bottom edge left -> left edge up -> start.
+          p.moveTo(left, y2);
+          lineAlongBorder(p, [[3 + dx, y2]]);
+          drawPolyline(p, h2Left, false);
+          lineAlongBorder(p, [[midX, y2]]);
+          drawPolyline(p, vLower, false);
+          lineAlongBorder(p, [[510 + dx, bottom], [left, bottom], [left, y2]]);
           p.closePath();
           break;
 
         case 6:
-          p.moveTo(WIDTH / 2 + dx, 1024 + dy);
-          p.lineTo(511 + dx, 1024 + dy);
-          drawPolyline(p, h2.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
-          p.lineTo(WIDTH + dx, 1023 + dy);
-          p.lineTo(WIDTH + dx, HEIGHT + dy);
-          p.lineTo(510 + dx, HEIGHT + dy);
-          drawPolyline(p, reversed(v.filter(pt => pt[1] >= 1024 + dy)), false);
+          // Clockwise chain:
+          // mid(1024) -> H2(right, left-to-right) -> right edge to bottom
+          // -> bottom edge to VPATH(lower) -> VPATH(lower, upward) -> start.
+          p.moveTo(midX, y2);
+          lineAlongBorder(p, [[511 + dx, y2]]);
+          drawPolyline(p, h2Right, false);
+          lineAlongBorder(p, [[right, 1023 + dy], [right, bottom], [510 + dx, bottom]]);
+          drawPolyline(p, reversed(vLower), false);
+          lineAlongBorder(p, [[midX, y2]]);
           p.closePath();
           break;
       }
