@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Puzzle Piece Cutter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 24px;
+      background: #f5f5f5;
+      color: #222;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+    }
+    p {
+      margin: 0 0 16px 0;
+    }
+    .panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    button, input[type="file"] {
+      font-size: 16px;
+    }
+    button {
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: #1a73e8;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #999;
+      cursor: not-allowed;
+    }
+    .secondary {
+      background: #555;
+    }
+    #status {
+      font-weight: bold;
+      margin-top: 8px;
+      min-height: 24px;
+    }
+    .note {
+      font-size: 14px;
+      color: #555;
+      margin-top: 8px;
+    }
+    .canvasBox {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 12px;
+      overflow: auto;
+    }
+    canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      background: #fff;
+    }
+    #thumbs {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .thumbCard {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .thumbCard h3 {
+      margin: 0 0 8px 0;
+      font-size: 15px;
+    }
+    .thumbCard canvas {
+      width: 100%;
+      height: auto;
+      border: 1px solid #eee;
+      background:
+        linear-gradient(45deg, #f2f2f2 25%, transparent 25%),
+        linear-gradient(-45deg, #f2f2f2 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f2f2f2 75%),
+        linear-gradient(-45deg, transparent 75%, #f2f2f2 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    }
+    .thumbButtons {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .thumbButtons button {
+      font-size: 14px;
+      padding: 8px 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Puzzle Piece Cutter</h1>
+  <p>Upload a <strong>PNG</strong> that is exactly <strong>1024×1536</strong>. This version uses shared vector centerlines traced from your template.</p>
+
+  <div class="panel">
+    <div class="row">
+      <input id="fileInput" type="file" accept=".png,image/png">
+      <button id="processBtn" disabled>Generate Pieces</button>
+      <button id="downloadAllBtn" class="secondary" disabled>Download All as ZIP</button>
+    </div>
+    <div id="status">Select a 1024×1536 PNG to begin.</div>
+    <div class="note">Only PNG files are supported. Only 1024×1536 images are accepted.</div>
+  </div>
+
+  <div class="panel">
+    <div class="canvasBox">
+      <div style="font-weight:bold; margin-bottom:8px;">Main Preview</div>
+      <canvas id="mainPreview" width="1024" height="1536"></canvas>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div style="font-weight:bold; margin-bottom:12px;">Exported Pieces</div>
+    <div id="thumbs"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+    const WIDTH = 1024;
+    const HEIGHT = 1536;
+    const OUTLINE_WIDTH = 6;
+    const OUTLINE_COLOR = '#000000';
+    const EXPORT_PADDING = OUTLINE_WIDTH;
+
+    // Shared vector centerlines traced from the uploaded template once.
+    // These are the source of truth for all pieces.
+    const VPATH = [[512,4],[511,187],[515,198],[524,206],[540,208],[547,207],[579,192],[598,186],[621,185],[637,189],[650,195],[657,200],[672,217],[680,236],[682,246],[682,263],[676,285],[663,305],[652,314],[637,322],[622,326],[604,327],[584,323],[549,309],[531,308],[519,314],[513,323],[511,334],[511,700],[507,710],[501,716],[495,719],[481,720],[474,719],[440,704],[422,699],[391,699],[379,703],[362,713],[346,731],[340,744],[337,755],[336,770],[337,782],[341,796],[350,812],[364,826],[375,833],[388,838],[411,841],[438,836],[478,819],[491,819],[501,823],[507,829],[510,835],[511,1210],[507,1221],[502,1226],[493,1230],[472,1229],[444,1217],[417,1209],[393,1209],[378,1213],[356,1225],[345,1236],[340,1243],[333,1258],[330,1276],[331,1293],[338,1312],[344,1321],[358,1335],[376,1345],[397,1350],[420,1349],[437,1345],[476,1329],[496,1330],[506,1337],[510,1344],[511,1350],[512,1475],[510,1531]];
+    const H1 = [[3,512],[131,512],[181,511],[191,509],[199,504],[202,500],[204,489],[203,484],[191,465],[183,447],[182,427],[185,416],[190,406],[205,391],[224,381],[239,377],[269,377],[286,382],[304,392],[318,406],[324,417],[327,428],[327,441],[325,451],[318,466],[310,477],[305,487],[305,496],[313,506],[328,511],[350,512],[689,512],[701,517],[707,523],[709,530],[708,540],[692,566],[685,585],[685,603],[692,621],[705,636],[722,647],[744,654],[769,656],[791,652],[813,642],[830,626],[838,612],[841,599],[841,588],[838,575],[831,560],[821,546],[817,537],[817,528],[820,522],[825,517],[837,512],[1020,511]];
+    const H2 = [[3,1024],[175,1024],[188,1022],[196,1018],[200,1014],[202,1002],[199,993],[187,976],[180,958],[180,939],[185,926],[200,909],[217,899],[238,893],[266,893],[285,898],[301,906],[319,923],[325,934],[328,947],[328,956],[325,968],[318,981],[307,996],[305,1005],[307,1013],[313,1019],[319,1022],[330,1024],[685,1024],[693,1026],[699,1029],[704,1034],[706,1046],[702,1056],[689,1074],[683,1089],[682,1105],[683,1112],[688,1124],[703,1141],[721,1152],[737,1157],[763,1160],[783,1157],[803,1150],[818,1140],[828,1129],[833,1120],[837,1105],[837,1094],[834,1082],[814,1047],[814,1040],[816,1035],[824,1028],[837,1024],[1020,1023]];
+
+    let sourceImage = null;
+    let pieceData = [];
+
+    const fileInput = document.getElementById('fileInput');
+    const processBtn = document.getElementById('processBtn');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+    const statusEl = document.getElementById('status');
+    const mainPreview = document.getElementById('mainPreview');
+    const thumbs = document.getElementById('thumbs');
+    const previewCtx = mainPreview.getContext('2d');
+
+    fileInput.addEventListener('change', handleFileSelect);
+    processBtn.addEventListener('click', generatePieces);
+    downloadAllBtn.addEventListener('click', downloadAllZip);
+
+    function setStatus(msg, isError = false) {
+      statusEl.textContent = msg;
+      statusEl.style.color = isError ? '#b00020' : '#222';
+    }
+
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      processBtn.disabled = true;
+      downloadAllBtn.disabled = true;
+      thumbs.innerHTML = '';
+      pieceData = [];
+      clearMainPreview();
+
+      if (!file) {
+        setStatus('Select a 1024×1536 PNG to begin.');
+        return;
+      }
+
+      if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
+        setStatus('Invalid file type. Only PNG files are allowed.', true);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const img = new Image();
+        img.onload = function() {
+          if (img.width !== WIDTH || img.height !== HEIGHT) {
+            setStatus('Invalid dimensions. Image must be exactly 1024×1536.', true);
+            return;
+          }
+          sourceImage = img;
+          drawMainPreview();
+          processBtn.disabled = false;
+          setStatus('PNG loaded successfully. Click "Generate Pieces".');
+        };
+        img.onerror = function() {
+          setStatus('Could not read the PNG image.', true);
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearMainPreview() {
+      previewCtx.clearRect(0, 0, WIDTH, HEIGHT);
+      previewCtx.fillStyle = '#ffffff';
+      previewCtx.fillRect(0, 0, WIDTH, HEIGHT);
+    }
+
+    function offsetPoints(points, dx, dy) {
+      return points.map(([x, y]) => [x + dx, y + dy]);
+    }
+
+    function drawPolyline(pathLike, points, start = true) {
+      if (!points.length) return;
+      if (start) pathLike.moveTo(points[0][0], points[0][1]);
+      else pathLike.lineTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) {
+        pathLike.lineTo(points[i][0], points[i][1]);
+      }
+    }
+
+    function reversed(points) {
+      return [...points].reverse();
+    }
+
+    function buildPiecePath(pieceIndex, dx = 0, dy = 0) {
+      const v = offsetPoints(VPATH, dx, dy);
+      const h1 = offsetPoints(H1, dx, dy);
+      const h2 = offsetPoints(H2, dx, dy);
+      const p = new Path2D();
+
+      switch (pieceIndex) {
+        case 1:
+          p.moveTo(dx, dy);
+          p.lineTo(WIDTH / 2 + dx, dy);
+          drawPolyline(p, v.filter(pt => pt[1] <= 512 + dy), false);
+          drawPolyline(p, reversed(h1.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
+          p.lineTo(dx, dy);
+          p.closePath();
+          break;
+
+        case 2:
+          p.moveTo(WIDTH / 2 + dx, dy);
+          p.lineTo(WIDTH + dx, dy);
+          p.lineTo(WIDTH + dx, 512 + dy);
+          drawPolyline(p, reversed(h1.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
+          drawPolyline(p, reversed(v.filter(pt => pt[1] <= 512 + dy)), false);
+          p.closePath();
+          break;
+
+        case 3:
+          p.moveTo(dx, 512 + dy);
+          drawPolyline(p, h1.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
+          drawPolyline(p, v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy), false);
+          drawPolyline(p, reversed(h2.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
+          p.lineTo(dx, 512 + dy);
+          p.closePath();
+          break;
+
+        case 4:
+          p.moveTo(WIDTH / 2 + dx, 512 + dy);
+          drawPolyline(p, h1.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
+          p.lineTo(WIDTH + dx, 1024 + dy);
+          drawPolyline(p, reversed(h2.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
+          drawPolyline(p, reversed(v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy)), false);
+          p.closePath();
+          break;
+
+        case 5:
+          p.moveTo(dx, 1024 + dy);
+          drawPolyline(p, h2.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
+          drawPolyline(p, v.filter(pt => pt[1] >= 1024 + dy), false);
+          p.lineTo(dx + WIDTH / 2, dy + HEIGHT);
+          p.lineTo(dx, dy + HEIGHT);
+          p.lineTo(dx, 1024 + dy);
+          p.closePath();
+          break;
+
+        case 6:
+          p.moveTo(WIDTH / 2 + dx, 1024 + dy);
+          drawPolyline(p, h2.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
+          p.lineTo(WIDTH + dx, HEIGHT + dy);
+          p.lineTo(WIDTH / 2 + dx, HEIGHT + dy);
+          drawPolyline(p, reversed(v.filter(pt => pt[1] >= 1024 + dy)), false);
+          p.closePath();
+          break;
+      }
+
+      return p;
+    }
+
+    function drawTemplateOverlay(ctx, dx = 0, dy = 0) {
+      ctx.beginPath();
+      ctx.rect(dx, dy, WIDTH, HEIGHT);
+      drawPolyline(ctx, offsetPoints(VPATH, dx, dy));
+      drawPolyline(ctx, offsetPoints(H1, dx, dy));
+      drawPolyline(ctx, offsetPoints(H2, dx, dy));
+      ctx.stroke();
+    }
+
+    function drawMainPreview() {
+      clearMainPreview();
+      if (!sourceImage) return;
+
+      previewCtx.drawImage(sourceImage, 0, 0, WIDTH, HEIGHT);
+
+      previewCtx.save();
+      previewCtx.strokeStyle = 'rgba(0,0,0,0.95)';
+      previewCtx.lineWidth = OUTLINE_WIDTH;
+      previewCtx.lineJoin = 'round';
+      previewCtx.lineCap = 'round';
+      drawTemplateOverlay(previewCtx, 0, 0);
+      previewCtx.restore();
+    }
+
+    function generatePieces() {
+      if (!sourceImage) {
+        setStatus('Please load a valid PNG first.', true);
+        return;
+      }
+
+      thumbs.innerHTML = '';
+      pieceData = [];
+
+      for (let i = 1; i <= 6; i++) {
+        const pieceCanvas = document.createElement('canvas');
+        pieceCanvas.width = WIDTH + EXPORT_PADDING * 2;
+        pieceCanvas.height = HEIGHT + EXPORT_PADDING * 2;
+        const ctx = pieceCanvas.getContext('2d');
+
+        const path = buildPiecePath(i, EXPORT_PADDING, EXPORT_PADDING);
+
+        ctx.clearRect(0, 0, pieceCanvas.width, pieceCanvas.height);
+
+        ctx.save();
+        ctx.clip(path);
+        ctx.drawImage(sourceImage, EXPORT_PADDING, EXPORT_PADDING, WIDTH, HEIGHT);
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = OUTLINE_COLOR;
+        ctx.lineWidth = OUTLINE_WIDTH;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke(path);
+        ctx.restore();
+
+        pieceData.push({
+          index: i,
+          canvas: pieceCanvas
+        });
+      }
+
+      renderThumbnails();
+      drawMainPreview();
+      downloadAllBtn.disabled = false;
+      setStatus('Done. 6 pieces generated using shared vector template paths.');
+    }
+
+    function renderThumbnails() {
+      thumbs.innerHTML = '';
+
+      pieceData.forEach(piece => {
+        const card = document.createElement('div');
+        card.className = 'thumbCard';
+
+        const title = document.createElement('h3');
+        title.textContent = 'Piece ' + piece.index;
+        card.appendChild(title);
+
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = 256;
+        thumbCanvas.height = 384;
+        const tctx = thumbCanvas.getContext('2d');
+        tctx.clearRect(0, 0, 256, 384);
+        tctx.drawImage(
+          piece.canvas,
+          0, 0, piece.canvas.width, piece.canvas.height,
+          0, 0, 256, 384
+        );
+        card.appendChild(thumbCanvas);
+
+        const buttonRow = document.createElement('div');
+        buttonRow.className = 'thumbButtons';
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Download PNG';
+        btn.addEventListener('click', () => {
+          downloadCanvas(piece.canvas, `piece_${piece.index}.png`);
+        });
+
+        buttonRow.appendChild(btn);
+        card.appendChild(buttonRow);
+
+        thumbs.appendChild(card);
+      });
+    }
+
+    function downloadCanvas(canvas, fileName) {
+      canvas.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    }
+
+    function canvasToBlob(canvas) {
+      return new Promise(resolve => {
+        canvas.toBlob(blob => resolve(blob), 'image/png');
+      });
+    }
+
+    async function downloadAllZip() {
+      if (!pieceData.length) {
+        setStatus('Generate the pieces first.', true);
+        return;
+      }
+
+      const zip = new JSZip();
+
+      for (const piece of pieceData) {
+        const blob = await canvasToBlob(piece.canvas);
+        zip.file(`piece_${piece.index}.png`, blob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'puzzle_pieces.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
