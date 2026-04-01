@@ -148,6 +148,8 @@
     const OUTLINE_WIDTH = 6;
     const OUTLINE_COLOR = '#000000';
     const EXPORT_PADDING = OUTLINE_WIDTH;
+    const DEBUG_VALIDATE_GEOMETRY = true;
+    const DEBUG_MAX_EDGE_LENGTH = 530;
 
     // Fixed template geometry (hard-coded and static).
     // The template never changes, so all split lines are explicitly defined here.
@@ -237,11 +239,108 @@
       return [...points].reverse();
     }
 
+    function formatPoint([x, y]) {
+      return `(${x}, ${y})`;
+    }
+
+    function segmentsIntersect(a1, a2, b1, b2) {
+      const orient = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+      const onSegment = (p, q, r) => (
+        Math.min(p[0], r[0]) <= q[0] && q[0] <= Math.max(p[0], r[0]) &&
+        Math.min(p[1], r[1]) <= q[1] && q[1] <= Math.max(p[1], r[1])
+      );
+
+      const o1 = orient(a1, a2, b1);
+      const o2 = orient(a1, a2, b2);
+      const o3 = orient(b1, b2, a1);
+      const o4 = orient(b1, b2, a2);
+
+      if (o1 === 0 && onSegment(a1, b1, a2)) return true;
+      if (o2 === 0 && onSegment(a1, b2, a2)) return true;
+      if (o3 === 0 && onSegment(b1, a1, b2)) return true;
+      if (o4 === 0 && onSegment(b1, a2, b2)) return true;
+
+      return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
+    }
+
+    function validatePieceGeometry(pieceIndex, points, dx, dy) {
+      const minX = dx;
+      const maxX = dx + WIDTH;
+      const minY = dy;
+      const maxY = dy + HEIGHT;
+
+      for (let i = 0; i < points.length; i++) {
+        const [x, y] = points[i];
+        if (x < minX || x > maxX || y < minY || y > maxY) {
+          throw new Error(
+            `Piece ${pieceIndex}: vertex ${i} out of bounds ${formatPoint([x, y])}; ` +
+            `expected within [${minX}, ${maxX}] x [${minY}, ${maxY}]`
+          );
+        }
+      }
+
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (len > DEBUG_MAX_EDGE_LENGTH) {
+          throw new Error(
+            `Piece ${pieceIndex}: edge ${i}->${(i + 1) % points.length} length ${len.toFixed(2)} exceeds ` +
+            `${DEBUG_MAX_EDGE_LENGTH}. ${formatPoint(a)} -> ${formatPoint(b)}`
+          );
+        }
+      }
+
+      const n = points.length;
+      for (let i = 0; i < n; i++) {
+        const a1 = points[i];
+        const a2 = points[(i + 1) % n];
+        for (let j = i + 1; j < n; j++) {
+          if (j === i) continue;
+          if ((j + 1) % n === i) continue;
+          if ((i + 1) % n === j) continue;
+          if (i === 0 && j === n - 1) continue;
+
+          const b1 = points[j];
+          const b2 = points[(j + 1) % n];
+          if (segmentsIntersect(a1, a2, b1, b2)) {
+            throw new Error(
+              `Piece ${pieceIndex}: self-intersection between edges ${i}->${(i + 1) % n} and ` +
+              `${j}->${(j + 1) % n}. ${formatPoint(a1)} -> ${formatPoint(a2)} with ${formatPoint(b1)} -> ${formatPoint(b2)}`
+            );
+          }
+        }
+      }
+    }
+
     function buildPiecePath(pieceIndex, dx = 0, dy = 0) {
       const v = offsetPoints(VPATH, dx, dy);
       const h1 = offsetPoints(H1, dx, dy);
       const h2 = offsetPoints(H2, dx, dy);
       const p = new Path2D();
+      const orderedPoints = [];
+      let hasStarted = false;
+
+      function moveToPoint(x, y) {
+        p.moveTo(x, y);
+        orderedPoints.push([x, y]);
+        hasStarted = true;
+      }
+
+      function lineToPoint(x, y) {
+        if (!hasStarted) {
+          moveToPoint(x, y);
+          return;
+        }
+        p.lineTo(x, y);
+        orderedPoints.push([x, y]);
+      }
+
+      function lineThrough(points) {
+        for (const [x, y] of points) {
+          lineToPoint(x, y);
+        }
+      }
 
       // NOTE:
       // We intentionally route each outer-edge connection through explicit border points.
@@ -249,80 +348,80 @@
       // fixed template, especially around pieces 3/4 where previous logic drifted.
       switch (pieceIndex) {
         case 1:
-          p.moveTo(dx, dy);
-          p.lineTo(WIDTH / 2 + dx, dy);
-          p.lineTo(WIDTH / 2 + dx, 4 + dy);
-          drawPolyline(p, v.filter(pt => pt[1] <= 512 + dy), false);
-          p.lineTo(3 + dx, 512 + dy);
-          drawPolyline(p, reversed(h1.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
-          p.lineTo(dx, 512 + dy);
-          p.lineTo(dx, dy);
+          moveToPoint(dx, dy);
+          lineToPoint(WIDTH / 2 + dx, dy);
+          lineToPoint(WIDTH / 2 + dx, 4 + dy);
+          lineThrough(v.filter(pt => pt[1] <= 512 + dy));
+          lineToPoint(3 + dx, 512 + dy);
+          lineThrough(reversed(h1.filter(pt => pt[0] <= WIDTH / 2 + dx)));
+          lineToPoint(dx, 512 + dy);
+          lineToPoint(dx, dy);
           p.closePath();
           break;
 
         case 2:
-          p.moveTo(WIDTH / 2 + dx, dy);
-          p.lineTo(WIDTH + dx, dy);
-          p.lineTo(WIDTH + dx, 511 + dy);
-          p.lineTo(1020 + dx, 511 + dy);
-          drawPolyline(p, reversed(h1.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
-          p.lineTo(WIDTH / 2 + dx, 512 + dy);
-          drawPolyline(p, reversed(v.filter(pt => pt[1] <= 512 + dy)), false);
-          p.lineTo(WIDTH / 2 + dx, dy);
+          moveToPoint(WIDTH / 2 + dx, dy);
+          lineToPoint(WIDTH + dx, dy);
+          lineToPoint(WIDTH + dx, 511 + dy);
+          lineToPoint(1020 + dx, 511 + dy);
+          lineThrough(reversed(h1.filter(pt => pt[0] >= WIDTH / 2 + dx)));
+          lineToPoint(WIDTH / 2 + dx, 512 + dy);
+          lineThrough(reversed(v.filter(pt => pt[1] <= 512 + dy)));
+          lineToPoint(WIDTH / 2 + dx, dy);
           p.closePath();
           break;
 
         case 3:
-          p.moveTo(dx, 512 + dy);
-          p.lineTo(3 + dx, 512 + dy);
-          drawPolyline(p, h1.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
-          p.lineTo(WIDTH / 2 + dx, 512 + dy);
-          drawPolyline(p, v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy), false);
-          p.lineTo(3 + dx, 1024 + dy);
-          drawPolyline(p, reversed(h2.filter(pt => pt[0] <= WIDTH / 2 + dx)), false);
-          p.lineTo(dx, 512 + dy);
+          moveToPoint(dx, 512 + dy);
+          lineToPoint(3 + dx, 512 + dy);
+          lineThrough(h1.filter(pt => pt[0] <= WIDTH / 2 + dx));
+          lineToPoint(WIDTH / 2 + dx, 512 + dy);
+          lineThrough(v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy));
+          lineToPoint(3 + dx, 1024 + dy);
+          lineThrough(reversed(h2.filter(pt => pt[0] <= WIDTH / 2 + dx)));
+          lineToPoint(dx, 512 + dy);
           p.closePath();
           break;
 
         case 4:
-          p.moveTo(WIDTH / 2 + dx, 512 + dy);
-          p.lineTo(511 + dx, 512 + dy);
-          drawPolyline(p, h1.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
-          p.lineTo(1024 + dx, 511 + dy);
-          p.lineTo(1024 + dx, 1023 + dy);
-          p.lineTo(1020 + dx, 1023 + dy);
-          drawPolyline(p, reversed(h2.filter(pt => pt[0] >= WIDTH / 2 + dx)), false);
-          p.lineTo(WIDTH / 2 + dx, 1024 + dy);
-          drawPolyline(p, reversed(v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy)), false);
-          p.lineTo(WIDTH / 2 + dx, 512 + dy);
+          moveToPoint(WIDTH / 2 + dx, 512 + dy);
+          lineToPoint(511 + dx, 512 + dy);
+          lineThrough(h1.filter(pt => pt[0] >= WIDTH / 2 + dx));
+          lineToPoint(1024 + dx, 511 + dy);
+          lineToPoint(1024 + dx, 1023 + dy);
+          lineToPoint(1020 + dx, 1023 + dy);
+          lineThrough(reversed(h2.filter(pt => pt[0] >= WIDTH / 2 + dx)));
+          lineToPoint(WIDTH / 2 + dx, 1024 + dy);
+          lineThrough(reversed(v.filter(pt => pt[1] >= 512 + dy && pt[1] <= 1024 + dy)));
+          lineToPoint(WIDTH / 2 + dx, 512 + dy);
           p.closePath();
           break;
 
         case 5:
-          p.moveTo(dx, 1024 + dy);
-          p.lineTo(3 + dx, 1024 + dy);
-          drawPolyline(p, h2.filter(pt => pt[0] <= WIDTH / 2 + dx), false);
-          p.lineTo(WIDTH / 2 + dx, 1024 + dy);
-          drawPolyline(p, v.filter(pt => pt[1] >= 1024 + dy), false);
-          p.lineTo(510 + dx, HEIGHT + dy);
-          p.lineTo(dx, dy + HEIGHT);
-          p.lineTo(dx, 1024 + dy);
+          moveToPoint(dx, 1024 + dy);
+          lineToPoint(3 + dx, 1024 + dy);
+          lineThrough(h2.filter(pt => pt[0] <= WIDTH / 2 + dx));
+          lineToPoint(WIDTH / 2 + dx, 1024 + dy);
+          lineThrough(v.filter(pt => pt[1] >= 1024 + dy));
+          lineToPoint(510 + dx, HEIGHT + dy);
+          lineToPoint(dx, dy + HEIGHT);
+          lineToPoint(dx, 1024 + dy);
           p.closePath();
           break;
 
         case 6:
-          p.moveTo(WIDTH / 2 + dx, 1024 + dy);
-          p.lineTo(511 + dx, 1024 + dy);
-          drawPolyline(p, h2.filter(pt => pt[0] >= WIDTH / 2 + dx), false);
-          p.lineTo(WIDTH + dx, 1023 + dy);
-          p.lineTo(WIDTH + dx, HEIGHT + dy);
-          p.lineTo(510 + dx, HEIGHT + dy);
-          drawPolyline(p, reversed(v.filter(pt => pt[1] >= 1024 + dy)), false);
+          moveToPoint(WIDTH / 2 + dx, 1024 + dy);
+          lineToPoint(511 + dx, 1024 + dy);
+          lineThrough(h2.filter(pt => pt[0] >= WIDTH / 2 + dx));
+          lineToPoint(WIDTH + dx, 1023 + dy);
+          lineToPoint(WIDTH + dx, HEIGHT + dy);
+          lineToPoint(510 + dx, HEIGHT + dy);
+          lineThrough(reversed(v.filter(pt => pt[1] >= 1024 + dy)));
           p.closePath();
           break;
       }
 
-      return p;
+      return { path: p, points: orderedPoints };
     }
 
     function drawTemplateOverlay(ctx, dx = 0, dy = 0) {
@@ -365,7 +464,10 @@
           pieceCanvas.height = HEIGHT + EXPORT_PADDING * 2;
           const ctx = pieceCanvas.getContext('2d');
 
-          const path = buildPiecePath(i, EXPORT_PADDING, EXPORT_PADDING);
+          const { path, points } = buildPiecePath(i, EXPORT_PADDING, EXPORT_PADDING);
+          if (DEBUG_VALIDATE_GEOMETRY) {
+            validatePieceGeometry(i, points, EXPORT_PADDING, EXPORT_PADDING);
+          }
 
           ctx.clearRect(0, 0, pieceCanvas.width, pieceCanvas.height);
 
@@ -394,7 +496,7 @@
         setStatus('Done. 6 pieces generated using fixed template geometry.');
       } catch (err) {
         console.error(err);
-        setStatus('Generation failed. Please reload and try again. Error: ' + (err && err.message ? err.message : String(err)), true);
+        setStatus('Generation failed due to geometry validation/rendering error: ' + (err && err.message ? err.message : String(err)), true);
       }
     }
 
